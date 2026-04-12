@@ -10,12 +10,11 @@ class PilotMetrics internal constructor() {
     var sampleIntervalMs: Long = 200
         internal set(value) { field = value.coerceIn(100, 1000) }
 
-    private var bufferSize: Int = 2000
-    internal var batchSize: Int = 200
-        private set
+    var bufferSize: Int = 2000
+        internal set
 
-    fun setBufferSize(size: Int) { bufferSize = size }
-    fun setBatchSize(size: Int) { batchSize = size }
+    var batchSize: Int = 200
+        internal set
 
     fun addCollector(collector: PilotMetricCollector) {
         collectors.add(collector)

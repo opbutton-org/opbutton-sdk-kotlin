@@ -81,7 +81,7 @@ class PilotUI internal constructor() {
 
     internal fun hasTabs(): Boolean = tabs.isNotEmpty()
 
-    fun getRevision(): Int = revision.get()
+    internal fun getRevision(): Int = revision.get()
 
     // ── Serialization ──
 

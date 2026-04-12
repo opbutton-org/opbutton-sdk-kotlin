@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 object Pilot {
-    const val VERSION = "1.0.33"
+    const val VERSION = "1.0.34"
 
     @Volatile
     private var instance: PilotInstance? = null
@@ -110,21 +110,21 @@ object Pilot {
     fun log(level: PilotLogLevel, message: String) {
         val p = instance ?: return
         if (!p.config.logConfig.isEnabled) return
-        p.bufferLog(PilotLogEntry(level, message, attributes = p.resolveLogAttributes()))
+        p.bufferLog(PilotLogEntry(level, message, null, null, null, p.resolveLogAttributes()))
     }
 
     @JvmStatic
     fun log(level: PilotLogLevel, message: String, category: String?, thread: String?) {
         val p = instance ?: return
         if (!p.config.logConfig.isEnabled) return
-        p.bufferLog(PilotLogEntry(level, message, category, thread, attributes = p.resolveLogAttributes()))
+        p.bufferLog(PilotLogEntry(level, message, category, thread, null, p.resolveLogAttributes()))
     }
 
     @JvmStatic
     fun log(level: PilotLogLevel, message: String, metadata: Map<String, Any?>?) {
         val p = instance ?: return
         if (!p.config.logConfig.isEnabled) return
-        p.bufferLog(PilotLogEntry(level, message, metadata = metadata, attributes = p.resolveLogAttributes()))
+        p.bufferLog(PilotLogEntry(level, message, null, null, metadata, p.resolveLogAttributes()))
     }
 
     @JvmStatic
@@ -275,12 +275,13 @@ object Pilot {
 
         p.bufferLog(
             PilotLogEntry(
-                level = PilotLogLevel.INFO,
-                message = message,
-                category = resolvedCategory,
-                metadata = resolvedMetadata,
-                attributes = p.resolveLogAttributes(),
-                clientTimestampMs = clientTimestampMs
+                PilotLogLevel.INFO,
+                message,
+                resolvedCategory,
+                null,
+                resolvedMetadata,
+                p.resolveLogAttributes(),
+                clientTimestampMs
             )
         )
     }
@@ -539,7 +540,7 @@ internal class PilotInstance(
                 try {
                     httpClient.submitPanel(token, snapshot)
                     ui.markSent()
-                    PilotLog.d("Initial UI submitted (revision=%d)", ui.revision)
+                    PilotLog.d("Initial UI submitted (revision=%d)", ui.getRevision())
                 } catch (e: PilotException) {
                     PilotLog.e("Failed to submit initial UI", e)
                     notifyError(e)
@@ -584,7 +585,7 @@ internal class PilotInstance(
                 try {
                     httpClient.submitPanel(token, uiSnapshot)
                     ui.markSent()
-                    PilotLog.d("UI submitted (revision=%d)", ui.revision)
+                    PilotLog.d("UI submitted (revision=%d)", ui.getRevision())
                 } catch (e: PilotException) {
                     PilotLog.e("Failed to submit UI", e)
                     notifyError(e)
