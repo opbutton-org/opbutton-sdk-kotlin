@@ -1,0 +1,68 @@
+plugins {
+    id("com.android.library") version "8.5.2"
+    id("org.jetbrains.kotlin.android") version "1.9.24"
+    id("maven-publish")
+}
+
+group = "org.pilot"
+version = "1.0.33"
+
+android {
+    namespace = "org.pilot.sdk"
+    compileSdk = 34
+
+    defaultConfig {
+        minSdk = 21
+        targetSdk = 34
+
+        consumerProguardFiles("consumer-rules.pro")
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+}
+
+dependencies {
+    api("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.annotation:annotation:1.7.1")
+    implementation("io.livekit:livekit-android:2.24.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+}
+
+android.publishing {
+    singleVariant("release") {
+        withSourcesJar()
+    }
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+
+                groupId = "org.pilot"
+                artifactId = "pilot-sdk"
+                version = project.version.toString()
+
+                pom {
+                    name.set("Pilot SDK")
+                    description.set("Android SDK for Pilot remote debug panel")
+                }
+            }
+        }
+    }
+}
