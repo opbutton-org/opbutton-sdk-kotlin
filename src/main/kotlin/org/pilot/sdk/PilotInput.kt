@@ -10,4 +10,8 @@ class PilotInput internal constructor(ui: PilotUI, label: String) : PilotWidget<
     fun onSubmit(callback: PilotWidgetCallback?) = apply {
         ui.registerCallback(internalId, callback)
     }
+
+    fun onSubmit(callback: (PilotInputAction) -> Unit) = apply {
+        ui.registerCallback(internalId) { action -> callback(PilotInputAction(action)) }
+    }
 }

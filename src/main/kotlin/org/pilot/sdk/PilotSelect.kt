@@ -22,4 +22,8 @@ class PilotSelect internal constructor(ui: PilotUI, label: String) : PilotWidget
     fun onChange(callback: PilotWidgetCallback?) = apply {
         ui.registerCallback(internalId, callback)
     }
+
+    fun onChange(callback: (PilotSelectAction) -> Unit) = apply {
+        ui.registerCallback(internalId) { action -> callback(PilotSelectAction(action)) }
+    }
 }

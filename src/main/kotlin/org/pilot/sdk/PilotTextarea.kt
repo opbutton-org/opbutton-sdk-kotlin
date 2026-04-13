@@ -9,4 +9,8 @@ class PilotTextarea internal constructor(ui: PilotUI, label: String) : PilotWidg
     fun onSubmit(callback: PilotWidgetCallback?) = apply {
         ui.registerCallback(internalId, callback)
     }
+
+    fun onSubmit(callback: (PilotTextareaAction) -> Unit) = apply {
+        ui.registerCallback(internalId) { action -> callback(PilotTextareaAction(action)) }
+    }
 }
