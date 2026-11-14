@@ -4,18 +4,21 @@ plugins {
     id("maven-publish")
 }
 
-group = "org.pilot"
+group = "org.opbutton"
 version = "1.0.35"
 
 android {
-    namespace = "org.pilot.sdk"
+    namespace = "org.opbutton.sdk"
     compileSdk = 34
 
     defaultConfig {
         minSdk = 21
-        targetSdk = 34
 
         consumerProguardFiles("consumer-rules.pro")
+    }
+
+    lint {
+        targetSdk = 34
     }
 
     compileOptions {
@@ -54,13 +57,13 @@ afterEvaluate {
             create<MavenPublication>("release") {
                 from(components["release"])
 
-                groupId = "org.pilot"
-                artifactId = "pilot-sdk"
+                groupId = "org.opbutton"
+                artifactId = "opbutton-sdk"
                 version = project.version.toString()
 
                 pom {
-                    name.set("Pilot SDK")
-                    description.set("Android SDK for Pilot remote debug panel")
+                    name.set("OpButton SDK")
+                    description.set("Android SDK for OpButton remote debug panel")
                 }
             }
         }

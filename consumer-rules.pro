@@ -1,1 +1,1 @@
--keep class org.pilot.sdk.** { *; }
+-keep class org.opbutton.sdk.** { *; }

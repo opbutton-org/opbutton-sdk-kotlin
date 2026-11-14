@@ -1,3 +1,3 @@
--keep class org.pilot.sdk.** { *; }
+-keep class org.opbutton.sdk.** { *; }
 -dontwarn okhttp3.**
 -dontwarn okio.**

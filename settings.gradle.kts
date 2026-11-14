@@ -15,4 +15,4 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "pilot-sdk"
+rootProject.name = "opbutton-sdk"
