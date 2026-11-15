@@ -12,7 +12,7 @@ class OpButtonUI internal constructor() {
     private val idCounter = AtomicInteger(0)
     private val version = 2
     private val revision = AtomicInteger(1)
-    private var sentRevision = 0
+    @Volatile private var sentRevision = 0
 
     internal fun nextId(): Int = idCounter.incrementAndGet()
 
@@ -75,8 +75,9 @@ class OpButtonUI internal constructor() {
 
     internal fun hasUnsent(): Boolean = revision.get() != sentRevision
 
-    internal fun markSent() {
-        sentRevision = revision.get()
+    @Synchronized
+    internal fun markSent(revision: Int) {
+        sentRevision = maxOf(sentRevision, revision)
     }
 
     internal fun hasTabs(): Boolean = tabs.isNotEmpty()

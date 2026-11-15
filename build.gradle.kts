@@ -5,14 +5,14 @@ plugins {
 }
 
 group = "org.opbutton"
-version = "1.0.35"
+version = "1.0.36"
 
 android {
     namespace = "org.opbutton.sdk"
     compileSdk = 34
 
     defaultConfig {
-        minSdk = 21
+        minSdk = 24
 
         consumerProguardFiles("consumer-rules.pro")
     }
@@ -39,6 +39,8 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     api("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.annotation:annotation:1.7.1")
     implementation("io.livekit:livekit-android:2.24.0")

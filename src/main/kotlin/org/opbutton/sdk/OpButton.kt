@@ -1,27 +1,13 @@
 package org.opbutton.sdk
 
 import android.content.Context
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import org.json.JSONObject
-import java.util.Collections
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.Executors
-import java.util.concurrent.FutureTask
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
 object OpButton {
-    const val VERSION = "1.0.34"
+    const val VERSION = "1.0.36"
 
     @Volatile
-    private var instance: OpButtonInstance? = null
+    private var instance: OpButtonRuntime? = null
 
     // ══════════════════════════════════════════════════════
     //  Static API
@@ -39,21 +25,10 @@ object OpButton {
 
         synchronized(this) {
             if (instance == null) {
-                val p = OpButtonInstance(config, context)
+                val p = OpButtonRuntime(config, context)
                 instance = p
                 OpButtonLog.i("OpButton SDK initialized (server: %s)", config.baseUrl)
-
-                config.sessionListener?.let { p.sessionListeners.add(it) }
-                config.actionListener?.let { p.actionListeners.add(it) }
-
-                val mc = config.metricConfig
-                if (mc.isEnabled) {
-                    p.metrics.addCollector(OpButtonDefaultMetricCollector(p.fpsTracker, context))
-                    for (collector in mc.collectors) {
-                        p.metrics.addCollector(collector)
-                    }
-                    OpButtonLog.i("Built-in metrics enabled (sample interval: %dms)", mc.sampleIntervalMs)
-                }
+                p.logConfiguration()
 
                 if (config.autoConnect) {
                     p.startConnection()
@@ -68,26 +43,26 @@ object OpButton {
 
     @JvmStatic
     val status: OpButtonSessionStatus
-        get() = instance?.status?.get() ?: OpButtonSessionStatus.DISCONNECTED
+        get() = instance?.currentStatus() ?: OpButtonSessionStatus.DISCONNECTED
 
     @JvmStatic
     fun addActionListener(listener: OpButtonActionListener) {
-        requireInstance().actionListeners.add(listener)
+        requireInstance().addActionListener(listener)
     }
 
     @JvmStatic
     fun removeActionListener(listener: OpButtonActionListener) {
-        instance?.actionListeners?.remove(listener)
+        instance?.removeActionListener(listener)
     }
 
     @JvmStatic
     fun addSessionListener(listener: OpButtonSessionListener) {
-        requireInstance().sessionListeners.add(listener)
+        requireInstance().addSessionListener(listener)
     }
 
     @JvmStatic
     fun removeSessionListener(listener: OpButtonSessionListener) {
-        instance?.sessionListeners?.remove(listener)
+        instance?.removeSessionListener(listener)
     }
 
     @JvmStatic
@@ -109,36 +84,36 @@ object OpButton {
     @JvmStatic
     fun log(level: OpButtonLogLevel, message: String) {
         val p = instance ?: return
-        if (!p.config.logConfig.isEnabled) return
-        p.bufferLog(OpButtonLogEntry(level, message, null, null, null, p.resolveLogAttributes()))
+        if (!p.isLoggingEnabled) return
+        p.telemetry.bufferLog(OpButtonLogEntry(level, message, null, null, null, p.telemetry.resolveLogAttributes()))
     }
 
     @JvmStatic
     fun log(level: OpButtonLogLevel, message: String, category: String?, thread: String?) {
         val p = instance ?: return
-        if (!p.config.logConfig.isEnabled) return
-        p.bufferLog(OpButtonLogEntry(level, message, category, thread, null, p.resolveLogAttributes()))
+        if (!p.isLoggingEnabled) return
+        p.telemetry.bufferLog(OpButtonLogEntry(level, message, category, thread, null, p.telemetry.resolveLogAttributes()))
     }
 
     @JvmStatic
     fun log(level: OpButtonLogLevel, message: String, metadata: Map<String, Any?>?) {
         val p = instance ?: return
-        if (!p.config.logConfig.isEnabled) return
-        p.bufferLog(OpButtonLogEntry(level, message, null, null, metadata, p.resolveLogAttributes()))
+        if (!p.isLoggingEnabled) return
+        p.telemetry.bufferLog(OpButtonLogEntry(level, message, null, null, metadata, p.telemetry.resolveLogAttributes()))
     }
 
     @JvmStatic
     fun log(level: OpButtonLogLevel, message: String, category: String?, thread: String?, metadata: Map<String, Any?>?) {
         val p = instance ?: return
-        if (!p.config.logConfig.isEnabled) return
-        p.bufferLog(OpButtonLogEntry(level, message, category, thread, metadata, p.resolveLogAttributes()))
+        if (!p.isLoggingEnabled) return
+        p.telemetry.bufferLog(OpButtonLogEntry(level, message, category, thread, metadata, p.telemetry.resolveLogAttributes()))
     }
 
     @JvmStatic
     fun log(entry: OpButtonLogEntry) {
         val p = instance ?: return
-        if (!p.config.logConfig.isEnabled) return
-        p.bufferLog(entry)
+        if (!p.isLoggingEnabled) return
+        p.telemetry.bufferLog(entry)
     }
 
     @JvmStatic
@@ -232,20 +207,12 @@ object OpButton {
 
     @JvmStatic
     fun acknowledgeAction(actionId: String, ackPayload: JSONObject?) {
-        val p = instance ?: return
-        val token = p.sessionToken.get() ?: return
-        p.executor?.execute {
-            try {
-                p.httpClient.acknowledgeAction(token, actionId, ackPayload)
-            } catch (e: OpButtonException) {
-                OpButtonLog.e("Failed to acknowledge action", e)
-            }
-        }
+        instance?.acknowledgeAction(actionId, ackPayload)
     }
 
     @JvmStatic
     fun shutdown() {
-        val p: OpButtonInstance?
+        val p: OpButtonRuntime?
         synchronized(this) {
             p = instance
             instance = null
@@ -257,7 +224,7 @@ object OpButton {
     //  Private helpers
     // ══════════════════════════════════════════════════════
 
-    private fun requireInstance(): OpButtonInstance =
+    private fun requireInstance(): OpButtonRuntime =
         instance ?: throw IllegalStateException("OpButton.initialize() must be called first")
 
     private fun bufferStructuredLog(
@@ -268,19 +235,19 @@ object OpButton {
         clientTimestampMs: Long
     ) {
         val p = instance ?: return
-        if (!p.config.logConfig.isEnabled) return
+        if (!p.isLoggingEnabled) return
 
         val resolvedCategory = resolveStructuredCategory(kind, category)
         val resolvedMetadata = mergeStructuredMetadata(kind, metadata)
 
-        p.bufferLog(
+        p.telemetry.bufferLog(
             OpButtonLogEntry(
                 OpButtonLogLevel.INFO,
                 message,
                 resolvedCategory,
                 null,
                 resolvedMetadata,
-                p.resolveLogAttributes(),
+                p.telemetry.resolveLogAttributes(),
                 clientTimestampMs
             )
         )
@@ -297,644 +264,5 @@ object OpButton {
         if (!metadata.isNullOrEmpty()) merged.putAll(metadata)
         merged["opbutton_kind"] = kind
         return merged
-    }
-}
-
-// ══════════════════════════════════════════════════════
-//  Internal instance — holds all mutable state
-// ══════════════════════════════════════════════════════
-
-internal class OpButtonInstance(
-    val config: OpButtonConfig,
-    context: Context?
-) {
-    val httpClient = OpButtonHttpClient(config.baseUrl, config.apiToken)
-    val sessionToken = AtomicReference<String>(null)
-    val status = AtomicReference(OpButtonSessionStatus.DISCONNECTED)
-    val ui = OpButtonUI()
-    val metrics = OpButtonMetrics()
-    val fpsTracker = OpButtonFpsTracker()
-    val actionListeners = CopyOnWriteArrayList<OpButtonActionListener>()
-    val sessionListeners = CopyOnWriteArrayList<OpButtonSessionListener>()
-
-    private val requestId = AtomicReference<String>(null)
-    private val running = AtomicBoolean(false)
-    private val actionPollInFlight = AtomicBoolean(false)
-
-    private val logBuffer: MutableList<OpButtonLogEntry> = Collections.synchronizedList(ArrayList())
-    private val logOverflowWarned = AtomicBoolean(false)
-    private val sessionAttributeCache = ConcurrentHashMap<String, Any>()
-
-    var executor: ScheduledExecutorService? = null
-        private set
-    private var actionPollFuture: ScheduledFuture<*>? = null
-    private var metricSampleFuture: ScheduledFuture<*>? = null
-
-    private val liveManager: OpButtonLiveManager
-    private val mainHandler = Handler(Looper.getMainLooper())
-
-    @Volatile
-    private var currentActionPollIntervalMs: Long = config.actionPollIntervalMs
-
-    init {
-        liveManager = OpButtonLiveManager(context, httpClient, ::updateLiveMode)
-        OpButtonLog.setLevel(config.logConfig.logLevel)
-        OpButtonLog.setLoggerListener(config.loggerListener)
-
-        val mc = config.metricConfig
-        if (mc.isEnabled) {
-            metrics.sampleIntervalMs = mc.sampleIntervalMs
-            metrics.bufferSize = mc.bufferSize
-            metrics.batchSize = mc.batchSize
-        }
-    }
-
-    fun startConnection() {
-        if (!running.compareAndSet(false, true)) {
-            OpButtonLog.w("Already connecting/connected")
-            return
-        }
-
-        executor = Executors.newScheduledThreadPool(3)
-        executor!!.execute(::connectAndWaitApproval)
-    }
-
-    fun stopConnection() {
-        if (!running.compareAndSet(true, false)) return
-
-        liveManager.onSessionClosed()
-        fpsTracker.stop()
-        cancelScheduledTasks()
-
-        val token = sessionToken.getAndSet(null)
-        if (token != null && executor?.isShutdown == false) {
-            executor?.execute {
-                try {
-                    flushLogs(token)
-                    flushMetrics(token)
-                    httpClient.closeSession(token)
-                } catch (_: OpButtonException) {
-                }
-                setStatus(OpButtonSessionStatus.CLOSED)
-                notifySessionClosed()
-            }
-        } else {
-            setStatus(OpButtonSessionStatus.DISCONNECTED)
-        }
-
-        shutdownExecutor()
-    }
-
-    fun doShutdown() {
-        OpButtonLog.i("Shutting down OpButton SDK")
-        fpsTracker.stop()
-        stopConnection()
-        liveManager.shutdown()
-        httpClient.shutdown()
-        actionListeners.clear()
-        sessionListeners.clear()
-        logBuffer.clear()
-        metrics.clear()
-    }
-
-    fun bufferLog(entry: OpButtonLogEntry) {
-        synchronized(logBuffer) {
-            if (logBuffer.size >= config.logConfig.bufferSize) {
-                logBuffer.removeAt(0)
-                if (logOverflowWarned.compareAndSet(false, true)) {
-                    OpButtonLog.w("Log buffer overflow (${config.logConfig.bufferSize}), dropping oldest entries")
-                }
-            }
-            logBuffer.add(entry)
-        }
-    }
-
-    fun resolveLogAttributes(): JSONObject? {
-        val builder = config.logConfig.attributes
-        val staticAttrs = builder.staticAttributes
-        val dynamicAttrs = builder.dynamicAttributes
-
-        if (staticAttrs.isEmpty() && dynamicAttrs.isEmpty()) return null
-
-        val attributes = JSONObject()
-        for ((key, value) in staticAttrs) {
-            try { attributes.put(key, value) } catch (_: Exception) {}
-        }
-
-        for ((key, provider) in dynamicAttrs) {
-            try {
-                val value = provider.getValue()
-                attributes.put(key, value ?: JSONObject.NULL)
-            } catch (_: Exception) {}
-        }
-
-        return if (attributes.length() == 0) null else attributes
-    }
-
-    // ── Connection logic ──
-
-    private fun connectAndWaitApproval() {
-        var retryDelayMs = 2000L
-        val maxRetryDelayMs = 30000L
-        var retryCount = 0
-
-        while (running.get()) {
-            try {
-                doConnectAndWaitApproval()
-                return
-            } catch (e: OpButtonException) {
-                when {
-                    e.isUnauthorized -> {
-                        OpButtonLog.e("Authentication failed", e)
-                        setStatus(OpButtonSessionStatus.AUTH_FAILED)
-                        running.set(false)
-                        notifyAuthFailed()
-                        return
-                    }
-                    !e.isNetworkError -> {
-                        OpButtonLog.e("Server error, stopping connection: %s", e.message)
-                        setStatus(OpButtonSessionStatus.ERROR)
-                        running.set(false)
-                        notifyError(e)
-                        return
-                    }
-                    else -> {
-                        retryCount++
-                        OpButtonLog.w("Connection attempt %d failed (network): %s, retrying in %dms", retryCount, e.message, retryDelayMs)
-                        setStatus(OpButtonSessionStatus.CONNECTING)
-
-                        try {
-                            Thread.sleep(retryDelayMs)
-                        } catch (_: InterruptedException) {
-                            Thread.currentThread().interrupt()
-                            running.set(false)
-                            return
-                        }
-
-                        retryDelayMs = (retryDelayMs * 2).coerceAtMost(maxRetryDelayMs)
-                    }
-                }
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                running.set(false)
-                return
-            }
-        }
-    }
-
-    @Throws(OpButtonException::class, InterruptedException::class)
-    private fun doConnectAndWaitApproval() {
-        setStatus(OpButtonSessionStatus.CONNECTING)
-        notifyConnecting()
-
-        val deviceId = config.deviceId.takeUnless { it.isNullOrEmpty() }
-            ?: "${Build.BRAND}-${Build.MODEL}"
-        val deviceName = config.deviceName.takeUnless { it.isNullOrEmpty() }
-            ?: "${Build.MODEL} (Android ${Build.VERSION.RELEASE})"
-
-        val resp = httpClient.connect(deviceId, deviceName, resolveAllSessionAttributes())
-        requestId.set(resp.requestId)
-
-        OpButtonLog.i("Connect request sent, request_id=%s, status=%s", resp.requestId, resp.status)
-
-        if (resp.isApproved && resp.sessionToken != null) {
-            onApproved(resp.sessionToken)
-            return
-        }
-
-        if (resp.isRejected) {
-            onRejected()
-            return
-        }
-
-        setStatus(OpButtonSessionStatus.WAITING_APPROVAL)
-        notifyWaitingApproval(resp.requestId)
-
-        while (running.get()) {
-            Thread.sleep(config.pollIntervalMs)
-
-            val pollResp = httpClient.pollStatus(resp.requestId)
-
-            if (pollResp.isApproved && pollResp.sessionToken != null) {
-                onApproved(pollResp.sessionToken)
-                return
-            }
-
-            if (pollResp.isRejected) {
-                onRejected()
-                return
-            }
-        }
-    }
-
-    private fun onApproved(token: String) {
-        sessionToken.set(token)
-        setStatus(OpButtonSessionStatus.ACTIVE)
-
-        OpButtonLog.i("Session approved and active")
-        notifySessionStarted(token)
-
-        if (ui.hasTabs()) {
-            val snapshot = buildUISnapshotOnMainThread()
-            if (snapshot != null) {
-                try {
-                    httpClient.submitPanel(token, snapshot)
-                    ui.markSent()
-                    OpButtonLog.d("Initial UI submitted (revision=%d)", ui.getRevision())
-                } catch (e: OpButtonException) {
-                    OpButtonLog.e("Failed to submit initial UI", e)
-                    notifyError(e)
-                }
-            }
-        }
-
-        scheduleActionPolling(token, config.actionPollIntervalMs)
-
-        if (config.metricConfig.isEnabled) {
-            fpsTracker.start()
-            val sampleMs = metrics.sampleIntervalMs
-            metricSampleFuture = executor?.scheduleAtFixedRate(
-                { metrics.sample() },
-                sampleMs,
-                sampleMs,
-                TimeUnit.MILLISECONDS
-            )
-        }
-    }
-
-    private fun onRejected() {
-        OpButtonLog.w("Connection request rejected")
-        setStatus(OpButtonSessionStatus.REJECTED)
-        running.set(false)
-        notifyRejected()
-    }
-
-    // ── Action polling ──
-
-    private fun doPollActions(token: String) {
-        if (!running.get() || !actionPollInFlight.compareAndSet(false, true)) return
-
-        try {
-            val changedAttrs = resolveChangedSessionAttributes()
-            val logChunk = drainLogChunk()
-            val metricChunk = metrics.drain()
-
-            val uiSnapshot = snapshotUIOnMainThread()
-
-            if (uiSnapshot != null) {
-                try {
-                    httpClient.submitPanel(token, uiSnapshot)
-                    ui.markSent()
-                    OpButtonLog.d("UI submitted (revision=%d)", ui.getRevision())
-                } catch (e: OpButtonException) {
-                    OpButtonLog.e("Failed to submit UI", e)
-                    notifyError(e)
-                }
-            }
-
-            try {
-                val json = httpClient.pollActions(token, changedAttrs, logChunk, metricChunk)
-                val actionsArr = json.optJSONArray("actions")
-                if (actionsArr != null && actionsArr.length() > 0) {
-                    for (i in 0 until actionsArr.length()) {
-                        val actionJson = actionsArr.optJSONObject(i) ?: continue
-                        val action = OpButtonAction.fromJson(actionJson)
-                        dispatchActionOnMainThread(action)
-                    }
-                }
-                if (logChunk.isNotEmpty()) {
-                    logOverflowWarned.set(false)
-                }
-            } catch (e: OpButtonException) {
-                requeueLogs(logChunk)
-                metrics.requeue(metricChunk)
-
-                if (e.isNetworkError) {
-                    OpButtonLog.w("Network error during action poll, will retry")
-                } else {
-                    OpButtonLog.w("Action poll failed with server error, attempting reconnect")
-                    attemptReconnect(token)
-                }
-            }
-        } finally {
-            actionPollInFlight.set(false)
-        }
-    }
-
-    private fun snapshotUIOnMainThread(): JSONObject? {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            ui.pollValues()
-            return if (ui.hasUnsent()) ui.toJson() else null
-        }
-
-        val task = FutureTask {
-            ui.pollValues()
-            if (ui.hasUnsent()) ui.toJson() else null
-        }
-        mainHandler.post(task)
-
-        return try {
-            task.get()
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            null
-        } catch (e: ExecutionException) {
-            OpButtonLog.e("Failed to snapshot UI on main thread", e)
-            null
-        }
-    }
-
-    private fun buildUISnapshotOnMainThread(): JSONObject? {
-        if (Looper.myLooper() == Looper.getMainLooper()) return ui.toJson()
-
-        val task = FutureTask { ui.toJson() }
-        mainHandler.post(task)
-
-        return try {
-            task.get()
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            null
-        } catch (e: ExecutionException) {
-            OpButtonLog.e("Failed to build UI snapshot on main thread", e)
-            null
-        }
-    }
-
-    private fun dispatchActionOnMainThread(action: OpButtonAction) {
-        mainHandler.post {
-            var handled = false
-            try {
-                handled = handleInternalAction(action)
-                if (!handled) ui.dispatchAction(action)
-            } catch (ex: Exception) {
-                OpButtonLog.e("Widget callback threw exception", ex)
-            }
-
-            if (!handled) {
-                for (listener in actionListeners) {
-                    try {
-                        listener.onOpButtonActionReceived(action)
-                    } catch (ex: Exception) {
-                        OpButtonLog.e("Action listener threw exception", ex)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun scheduleActionPolling(token: String, intervalMs: Long) {
-        val exec = executor ?: return
-        if (exec.isShutdown || !running.get()) return
-
-        actionPollFuture?.cancel(false)
-        actionPollFuture = null
-
-        currentActionPollIntervalMs = intervalMs
-        actionPollFuture = exec.scheduleAtFixedRate(
-            { doPollActions(token) },
-            0,
-            intervalMs,
-            TimeUnit.MILLISECONDS
-        )
-    }
-
-    private fun updateLiveMode(enabled: Boolean, requestedPollIntervalMs: Long) {
-        val token = sessionToken.get() ?: return
-        val exec = executor ?: return
-        if (exec.isShutdown) return
-
-        val targetIntervalMs = if (enabled) {
-            (if (requestedPollIntervalMs > 0) requestedPollIntervalMs else 500L)
-                .coerceIn(200L, config.actionPollIntervalMs)
-        } else {
-            config.actionPollIntervalMs
-        }
-
-        if (targetIntervalMs == currentActionPollIntervalMs) return
-
-        exec.execute { scheduleActionPolling(token, targetIntervalMs) }
-    }
-
-    private fun handleInternalAction(action: OpButtonAction): Boolean {
-        when (action.actionType) {
-            OpButtonActionType.LIVE_START -> {
-                val token = sessionToken.get()
-                if (token == null) {
-                    OpButton.acknowledgeAction(action.id, buildInternalAck(false, "No active session available for streaming"))
-                } else {
-                    val actionId = action.id
-                    val payload = action.payload
-                    executor?.execute {
-                        val result = liveManager.start(token, payload)
-                        OpButton.acknowledgeAction(actionId, result)
-                    }
-                }
-                return true
-            }
-            OpButtonActionType.LIVE_UPDATE -> {
-                val token = sessionToken.get()
-                if (token == null) {
-                    OpButton.acknowledgeAction(action.id, buildInternalAck(false, "No active session available for streaming"))
-                } else {
-                    val actionId = action.id
-                    val payload = action.payload
-                    executor?.execute {
-                        val result = liveManager.update(token, payload)
-                        OpButton.acknowledgeAction(actionId, result)
-                    }
-                }
-                return true
-            }
-            OpButtonActionType.LIVE_STOP -> {
-                OpButton.acknowledgeAction(action.id, liveManager.stop())
-                return true
-            }
-            OpButtonActionType.LIVE_TAP -> {
-                OpButton.acknowledgeAction(action.id, liveManager.tap(action.payload))
-                return true
-            }
-            OpButtonActionType.LIVE_LONG_PRESS -> {
-                OpButton.acknowledgeAction(action.id, liveManager.longPress(action.payload))
-                return true
-            }
-            else -> return false
-        }
-    }
-
-    // ── Log buffering ──
-
-    private fun drainLogChunk(): List<OpButtonLogEntry> {
-        if (logBuffer.isEmpty()) return emptyList()
-
-        synchronized(logBuffer) {
-            val count = logBuffer.size.coerceAtMost(config.logConfig.batchSize)
-            val chunk = ArrayList(logBuffer.subList(0, count))
-            logBuffer.subList(0, count).clear()
-            return chunk
-        }
-    }
-
-    private fun requeueLogs(chunk: List<OpButtonLogEntry>) {
-        if (chunk.isEmpty()) return
-
-        synchronized(logBuffer) {
-            logBuffer.addAll(0, chunk)
-            while (logBuffer.size > config.logConfig.bufferSize) {
-                logBuffer.removeAt(logBuffer.size - 1)
-            }
-        }
-    }
-
-    @Throws(OpButtonException::class)
-    private fun flushLogs(token: String) {
-        val chunk = drainLogChunk()
-        if (chunk.isEmpty()) return
-
-        try {
-            httpClient.sendLogs(token, chunk)
-        } catch (e: OpButtonException) {
-            requeueLogs(chunk)
-            throw e
-        }
-    }
-
-    @Throws(OpButtonException::class)
-    private fun flushMetrics(token: String) {
-        val chunk = metrics.drain()
-        if (chunk.isEmpty()) return
-
-        try {
-            httpClient.sendMetrics(token, chunk)
-        } catch (e: OpButtonException) {
-            metrics.requeue(chunk)
-            throw e
-        }
-    }
-
-    // ── Session attributes ──
-
-    private fun resolveAllSessionAttributes(): Map<String, Any> {
-        val builder = config.sessionAttributes
-        val merged = ConcurrentHashMap(builder.staticAttributes)
-
-        for ((key, provider) in builder.dynamicAttributes) {
-            try {
-                val value = provider.getValue()
-                val resolved = value ?: JSONObject.NULL
-                merged[key] = resolved
-                sessionAttributeCache[key] = resolved
-            } catch (e: Exception) {
-                OpButtonLog.e("Session attribute provider failed: $key", e)
-            }
-        }
-
-        return merged
-    }
-
-    private fun resolveChangedSessionAttributes(): Map<String, Any>? {
-        val dynamicAttrs = config.sessionAttributes.dynamicAttributes
-        if (dynamicAttrs.isEmpty()) return null
-
-        var changed: MutableMap<String, Any>? = null
-
-        for ((key, provider) in dynamicAttrs) {
-            try {
-                val value = provider.getValue()
-                val resolved = value ?: JSONObject.NULL
-                val cached = sessionAttributeCache[key]
-
-                if (resolved != cached) {
-                    sessionAttributeCache[key] = resolved
-                    if (changed == null) changed = ConcurrentHashMap()
-                    changed[key] = resolved
-                }
-            } catch (e: Exception) {
-                OpButtonLog.e("Session attribute provider failed: $key", e)
-            }
-        }
-
-        return changed
-    }
-
-    // ── Reconnection ──
-
-    private fun attemptReconnect(token: String) {
-        cancelScheduledTasks()
-        setStatus(OpButtonSessionStatus.CONNECTING)
-
-        var retryDelay = 2000L
-        val maxDelay = 30000L
-
-        while (running.get()) {
-            try {
-                Thread.sleep(retryDelay)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                return
-            }
-
-            if (!running.get()) return
-
-            try {
-                httpClient.pollActions(token, null, emptyList(), emptyList())
-
-                OpButtonLog.i("Reconnect successful, session still active")
-                setStatus(OpButtonSessionStatus.ACTIVE)
-                scheduleActionPolling(token, currentActionPollIntervalMs)
-                return
-            } catch (e: OpButtonException) {
-                if (e.isNetworkError) {
-                    OpButtonLog.w("Reconnect: no network, retrying in %dms", retryDelay)
-                    retryDelay = (retryDelay * 2).coerceAtMost(maxDelay)
-                    continue
-                }
-
-                OpButtonLog.w("Session lost (server error), starting fresh connection")
-                resetAndRestart()
-                return
-            }
-        }
-    }
-
-    private fun resetAndRestart() {
-        running.set(false)
-        sessionToken.set(null)
-        liveManager.onSessionClosed()
-        setStatus(OpButtonSessionStatus.DISCONNECTED)
-        notifySessionClosed()
-        startConnection()
-    }
-
-    private fun setStatus(newStatus: OpButtonSessionStatus) {
-        status.set(newStatus)
-    }
-
-    private fun cancelScheduledTasks() {
-        actionPollFuture?.cancel(false)
-        actionPollFuture = null
-        metricSampleFuture?.cancel(false)
-        metricSampleFuture = null
-    }
-
-    private fun shutdownExecutor() {
-        executor?.takeIf { !it.isShutdown }?.shutdown()
-    }
-
-    // ── Listener notifications ──
-
-    private fun notifyConnecting() = sessionListeners.forEach { it.onOpButtonSessionConnecting() }
-    private fun notifyWaitingApproval(reqId: String) = sessionListeners.forEach { it.onOpButtonSessionWaitingApproval(reqId) }
-    private fun notifySessionStarted(token: String) = sessionListeners.forEach { it.onOpButtonSessionStarted(token) }
-    private fun notifySessionClosed() = sessionListeners.forEach { it.onOpButtonSessionClosed() }
-    private fun notifyRejected() = sessionListeners.forEach { it.onOpButtonSessionRejected() }
-    private fun notifyAuthFailed() = sessionListeners.forEach { it.onOpButtonSessionAuthFailed() }
-    private fun notifyError(exception: OpButtonException) = sessionListeners.forEach { it.onOpButtonSessionError(exception) }
-
-    companion object {
-        private fun buildInternalAck(ok: Boolean, status: String) = JSONObject().apply {
-            put("ok", ok)
-            put("status", status)
-        }
     }
 }

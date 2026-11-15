@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 internal class OpButtonHttpClient(
     private val baseUrl: String,
     private val apiToken: String
-) {
+) : OpButtonPollDelivery.Transport {
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
     private val emptyBody = "".toRequestBody(jsonMedia)
 
@@ -65,7 +65,7 @@ internal class OpButtonHttpClient(
         return execute(request).optBoolean("ok", false)
     }
 
-    fun submitPanel(sessionToken: String, layout: JSONObject): JSONObject {
+    override fun submitPanel(sessionToken: String, layout: JSONObject): JSONObject {
         val body = JSONObject().apply {
             put("layout", layout)
         }
@@ -77,7 +77,7 @@ internal class OpButtonHttpClient(
         return execute(request)
     }
 
-    fun pollActions(
+    override fun pollActions(
         sessionToken: String,
         changedAttributes: Map<String, Any>?,
         logs: List<OpButtonLogEntry>,
