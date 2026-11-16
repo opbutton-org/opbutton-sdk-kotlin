@@ -8,19 +8,20 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.UUID
 
 internal class OpButtonHttpClient(
     private val baseUrl: String,
-    private val apiToken: String
-) : OpButtonPollDelivery.Transport {
-    private val jsonMedia = "application/json; charset=utf-8".toMediaType()
-    private val emptyBody = "".toRequestBody(jsonMedia)
-
-    private val http = OkHttpClient.Builder()
+    private val apiToken: String,
+    private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
         .build()
+) : OpButtonPollDelivery.Transport {
+    private val jsonMedia = "application/json; charset=utf-8".toMediaType()
+    private val emptyBody = "".toRequestBody(jsonMedia)
+    private val runId = UUID.randomUUID().toString()
 
     fun shutdown() {
         http.dispatcher.executorService.shutdown()
@@ -33,6 +34,7 @@ internal class OpButtonHttpClient(
         val body = JSONObject().apply {
             put("device_id", deviceId)
             put("device_name", deviceName)
+            put("run_id", runId)
             if (sessionAttributes.isNotEmpty()) {
                 val attrs = JSONObject()
                 for ((key, value) in sessionAttributes) {
@@ -50,7 +52,7 @@ internal class OpButtonHttpClient(
     }
 
     fun pollStatus(requestId: String): OpButtonConnectResponse {
-        val request = apiTokenRequest("/api/client/poll-status/$requestId")
+        val request = apiTokenRequest("/api/client/poll-status/$requestId?run_id=$runId")
             .get()
             .build()
 
