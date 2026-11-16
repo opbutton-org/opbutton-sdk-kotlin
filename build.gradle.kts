@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "org.opbutton"
-version = "1.0.36"
+version = "1.0.37"
 
 android {
     namespace = "org.opbutton.sdk"

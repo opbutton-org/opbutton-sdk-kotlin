@@ -3,10 +3,9 @@ package org.opbutton.sdk
 import org.json.JSONObject
 
 open class OpButtonWidget<T : OpButtonWidget<T>> internal constructor(
-    internal val ui: OpButtonUI,
+    ui: OpButtonUI,
     type: String
-) {
-    internal val internalId: Int = ui.nextId()
+) : OpButtonElement<T>(ui) {
     var publicId: String = "$type-$internalId"
         private set
     val type: String = type
@@ -55,5 +54,7 @@ open class OpButtonWidget<T : OpButtonWidget<T>> internal constructor(
         }
     }
 
-    internal fun toJson(): JSONObject = json
+    internal override fun detach() { ui.unregisterProvider(this); super.detach() }
+
+    internal fun toJson(): JSONObject = decorate(json)
 }

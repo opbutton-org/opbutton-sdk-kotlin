@@ -3,148 +3,139 @@ package org.opbutton.sdk
 import org.json.JSONArray
 import org.json.JSONObject
 
-class OpButtonLayout internal constructor(
-    private val ui: OpButtonUI,
-    val direction: Direction
-) {
-    enum class Direction(internal val value: String) {
-        VERTICAL("vertical"),
-        HORIZONTAL("horizontal")
-    }
-
+class OpButtonLayout internal constructor(ui: OpButtonUI, val direction: Direction) : OpButtonElement<OpButtonLayout>(ui) {
+    enum class Direction(internal val value: String) { VERTICAL("vertical"), HORIZONTAL("horizontal"), GRID("grid") }
     private val children = mutableListOf<Any>()
-
-    // ── Sub-layouts ──
-
-    fun addVertical(): OpButtonLayout {
-        val sub = OpButtonLayout(ui, Direction.VERTICAL)
-        children.add(sub)
-        ui.incrementRevision()
-        return sub
+    private val settings = JSONObject()
+    private fun option(key: String, value: Any) = apply { settings.put(key, value); ui.incrementRevision() }
+    fun gap(pixels: Double) = option("gap", dimension(pixels))
+    fun padding(pixels: Double) = option("padding", dimension(pixels))
+    fun align(value: String) = option("align", alignment(value))
+    fun justify(value: String) = apply {
+        require(value in setOf("start", "center", "end", "space-between"))
+        option("justify", value)
     }
-
-    fun addHorizontal(): OpButtonLayout {
-        val sub = OpButtonLayout(ui, Direction.HORIZONTAL)
-        children.add(sub)
+    fun wrap(value: Boolean) = option("wrap", value)
+    fun density(value: String) = apply { require(value in setOf("compact", "comfortable")); option("density", value) }
+    fun columns(value: Int) = apply { require(value in 1..12); option("gridColumns", value) }
+    fun minCellWidth(pixels: Double) = option("minCellWidth", dimension(pixels, true))
+    fun title(value: String) = option("title", value)
+    private fun addLayout(direction: Direction): OpButtonLayout {
+        val child = OpButtonLayout(ui, direction)
+        children.add(child)
         ui.incrementRevision()
-        return sub
+        return child
     }
-
+    fun addVertical() = addLayout(Direction.VERTICAL)
+    fun addHorizontal() = addLayout(Direction.HORIZONTAL)
+    fun addGrid() = addLayout(Direction.GRID)
+    fun addGroup(title: String) = addVertical().title(title)
+    fun addPadding(weight: Double) = apply { children.add(PaddingElement(ui, weight)); ui.incrementRevision() }
     fun addCollapsible(title: String): OpButtonLayout {
-        val collapsible = CollapsibleElement(ui, title)
-        children.add(collapsible)
+        val child = CollapsibleElement(ui, title)
+        children.add(child)
         ui.incrementRevision()
-        return collapsible.content
+        return child.content
     }
-
-    // ── Padding ──
-
-    fun addPadding(weight: Double): OpButtonLayout {
-        children.add(PaddingElement(weight))
-        ui.incrementRevision()
-        return this
-    }
-
-    // ── Widgets ──
-
     fun addButton(label: String): OpButtonButton {
-        val w = OpButtonButton(ui, label)
-        children.add(w)
+        val widget = OpButtonButton(ui, label)
+        children.add(widget)
         ui.incrementRevision()
-        return w
+        return widget
     }
 
-    fun addLabel(text: String): OpButtonLabel {
-        val w = OpButtonLabel(ui, text)
-        children.add(w)
+    fun addLabel(label: String): OpButtonLabel {
+        val widget = OpButtonLabel(ui, label)
+        children.add(widget)
         ui.incrementRevision()
-        return w
+        return widget
     }
 
     fun addStat(label: String): OpButtonStat {
-        val w = OpButtonStat(ui, label)
-        children.add(w)
+        val widget = OpButtonStat(ui, label)
+        children.add(widget)
         ui.incrementRevision()
-        return w
+        return widget
     }
 
     fun addSwitch(label: String): OpButtonSwitch {
-        val w = OpButtonSwitch(ui, label)
-        children.add(w)
+        val widget = OpButtonSwitch(ui, label)
+        children.add(widget)
         ui.incrementRevision()
-        return w
+        return widget
     }
 
     fun addInput(label: String): OpButtonInput {
-        val w = OpButtonInput(ui, label)
-        children.add(w)
+        val widget = OpButtonInput(ui, label)
+        children.add(widget)
         ui.incrementRevision()
-        return w
+        return widget
     }
 
     fun addSelect(label: String): OpButtonSelect {
-        val w = OpButtonSelect(ui, label)
-        children.add(w)
+        val widget = OpButtonSelect(ui, label)
+        children.add(widget)
         ui.incrementRevision()
-        return w
+        return widget
     }
 
     fun addTextarea(label: String): OpButtonTextarea {
-        val w = OpButtonTextarea(ui, label)
-        children.add(w)
+        val widget = OpButtonTextarea(ui, label)
+        children.add(widget)
         ui.incrementRevision()
-        return w
+        return widget
     }
 
     fun addTable(label: String): OpButtonTable {
-        val w = OpButtonTable(ui, label)
-        children.add(w)
+        val widget = OpButtonTable(ui, label)
+        children.add(widget)
         ui.incrementRevision()
-        return w
+        return widget
     }
 
     fun addLogs(label: String): OpButtonLogs {
-        val w = OpButtonLogs(ui, label)
-        children.add(w)
+        val widget = OpButtonLogs(ui, label)
+        children.add(widget)
         ui.incrementRevision()
-        return w
+        return widget
     }
 
-    // ── Serialization ──
-
-    internal fun toJson(): JSONObject = JSONObject().apply {
-        put("type", "layout")
-        put("direction", direction.value)
-        val childrenArr = JSONArray()
-        for (child in children) {
-            when (child) {
-                is OpButtonLayout -> childrenArr.put(child.toJson())
-                is OpButtonWidget<*> -> childrenArr.put(child.toJson())
-                is PaddingElement -> childrenArr.put(child.toJson())
-                is CollapsibleElement -> childrenArr.put(child.toJson())
-            }
-        }
-        put("children", childrenArr)
+    fun addRadioGroup(label: String): OpButtonRadioGroup {
+        val widget = OpButtonRadioGroup(ui, label)
+        children.add(widget)
+        ui.incrementRevision()
+        return widget
     }
 
-    // ── Padding helper ──
-
-    internal class PaddingElement(private val weight: Double) {
-        fun toJson(): JSONObject = JSONObject().apply {
-            put("type", "padding")
-            put("weight", weight)
-        }
+    fun addSlider(label: String): OpButtonSlider {
+        val widget = OpButtonSlider(ui, label)
+        children.add(widget)
+        ui.incrementRevision()
+        return widget
     }
 
-    // ── Collapsible helper ──
+    internal override fun detach() { children.forEach { (it as OpButtonElement<*>).detach() }; super.detach() }
 
-    internal class CollapsibleElement(ui: OpButtonUI, private val title: String) {
+    internal fun toJson(): JSONObject = decorate(JSONObject().apply {
+        put("type", "layout"); put("direction", direction.value)
+        for (key in settings.keys()) put(key, settings.get(key))
+        put("children", JSONArray().apply {
+            for (child in children) put(when (child) {
+                is OpButtonLayout -> child.toJson()
+                is OpButtonWidget<*> -> child.toJson()
+                is PaddingElement -> child.toJson()
+                is CollapsibleElement -> child.toJson()
+                else -> error("Unknown layout child")
+            })
+        })
+    })
+    private class PaddingElement(ui: OpButtonUI, val weight: Double) : OpButtonElement<PaddingElement>(ui) {
+        fun toJson() = decorate(JSONObject().put("type", "padding").put("weight", weight))
+    }
+    private class CollapsibleElement(ui: OpButtonUI, val title: String) : OpButtonElement<CollapsibleElement>(ui) {
+        override fun detach() { content.detach(); super.detach() }
         val content = OpButtonLayout(ui, Direction.VERTICAL)
-
-        fun toJson(): JSONObject = JSONObject().apply {
-            put("type", "collapsible")
-            put("title", title)
-            put("children", content.toJson().optJSONArray("children"))
-        }
+        fun toJson() = decorate(JSONObject().put("type", "collapsible").put("title", title)
+            .put("children", JSONArray().put(content.toJson())))
     }
 }

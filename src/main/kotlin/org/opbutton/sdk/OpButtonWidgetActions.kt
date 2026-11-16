@@ -28,3 +28,11 @@ class OpButtonSelectAction internal constructor(val action: OpButtonAction) {
 class OpButtonTextareaAction internal constructor(val action: OpButtonAction) {
     val value: String get() = action.payload?.optString("value", "") ?: ""
 }
+
+class OpButtonRadioGroupAction internal constructor(val action: OpButtonAction) {
+    val value: String get() = action.payload?.optString("value", "") ?: ""
+}
+
+class OpButtonSliderAction internal constructor(val action: OpButtonAction) {
+    val value: Double get() = action.payload?.optDouble("value", 0.0) ?: 0.0
+}

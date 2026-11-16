@@ -19,7 +19,7 @@ class OpButtonUI internal constructor() {
     // ── Tab management ──
 
     fun addTab(title: String): OpButtonTab {
-        tabs.removeAll { it.title == title }
+        tabs.removeAll { if (it.title != title) false else { it.detach(); true } }
         val tab = OpButtonTab(this, title)
         tabs.add(tab)
         revision.incrementAndGet()
@@ -29,7 +29,7 @@ class OpButtonUI internal constructor() {
     fun getTab(id: String): OpButtonTab? = tabs.firstOrNull { it.id == id }
 
     fun removeTab(id: String) {
-        tabs.removeAll { it.id == id }
+        tabs.removeAll { if (it.id != id) false else { it.detach(); true } }
         revision.incrementAndGet()
     }
 
