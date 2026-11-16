@@ -5,7 +5,8 @@ import org.json.JSONObject
 class OpButtonConnectResponse internal constructor(
     val requestId: String,
     val status: String,
-    val sessionToken: String?
+    val sessionToken: String?,
+    val deviceSecret: String?
 ) {
     val isPending: Boolean get() = status == "pending"
     val isApproved: Boolean get() = status == "approved"
@@ -15,10 +16,13 @@ class OpButtonConnectResponse internal constructor(
         fun fromJson(json: JSONObject): OpButtonConnectResponse {
             val token = if (json.isNull("session_token")) null
             else json.optString("session_token")
+            val deviceSecret = if (json.isNull("device_secret")) null
+            else json.optString("device_secret")
             return OpButtonConnectResponse(
                 requestId = json.optString("request_id", ""),
                 status = json.optString("status", ""),
-                sessionToken = token
+                sessionToken = token,
+                deviceSecret = deviceSecret
             )
         }
     }

@@ -1,6 +1,7 @@
 package org.opbutton.sdk
 
 import android.content.Context
+import java.net.URI
 
 class OpButtonConfig private constructor(
     internal val baseUrl: String,
@@ -15,7 +16,9 @@ class OpButtonConfig private constructor(
     internal val actionListener: OpButtonActionListener?,
     internal val sessionAttributes: OpButtonSessionAttributeBuilder,
     internal val logConfig: OpButtonLogConfigBuilder,
-    internal val metricConfig: OpButtonMetricConfigBuilder
+    internal val metricConfig: OpButtonMetricConfigBuilder,
+    internal val deviceSecret: String?,
+    internal val allowInsecureLocalhost: Boolean
 ) {
     class Builder(baseUrl: String, private val apiToken: String) {
         private val baseUrl: String = baseUrl.trimEnd('/')
@@ -30,9 +33,13 @@ class OpButtonConfig private constructor(
         private var sessionAttributes = OpButtonSessionAttributeBuilder()
         private var logConfig = OpButtonLogConfigBuilder()
         private var metricConfig = OpButtonMetricConfigBuilder()
+        private var deviceSecret: String? = null
+        private var allowInsecureLocalhost = false
 
         fun setDeviceId(deviceId: String) = apply { this.deviceId = deviceId }
         fun setDeviceName(deviceName: String) = apply { this.deviceName = deviceName }
+        fun setDeviceSecret(deviceSecret: String) = apply { this.deviceSecret = deviceSecret }
+        fun setAllowInsecureLocalhost(allow: Boolean) = apply { this.allowInsecureLocalhost = allow }
         fun setPollIntervalMs(ms: Long) = apply { this.pollIntervalMs = ms }
         fun setActionPollIntervalMs(ms: Long) = apply { this.actionPollIntervalMs = ms }
         fun setAutoConnect(autoConnect: Boolean) = apply { this.autoConnect = autoConnect }
@@ -45,13 +52,38 @@ class OpButtonConfig private constructor(
 
         fun build(): OpButtonConfig {
             require(baseUrl.isNotEmpty()) { "baseUrl is required" }
-            require(apiToken.isNotEmpty()) { "apiToken is required" }
+            require(apiToken.isNotEmpty() && safeHeaderValue(apiToken)) {
+                "apiToken is required and must contain only printable ASCII characters"
+            }
+            require(pollIntervalMs in 250..300000 && actionPollIntervalMs in 250..300000) {
+                "poll intervals must be between 250ms and 300000ms"
+            }
+            require(deviceSecret == null ||
+                (deviceSecret!!.length in 32..256 && safeHeaderValue(deviceSecret!!))) {
+                "deviceSecret must contain 32 to 256 printable ASCII characters"
+            }
+            val uri = try { URI(baseUrl) } catch (error: Exception) {
+                throw IllegalArgumentException("baseUrl is invalid", error)
+            }
+            val local = uri.host.equals("localhost", ignoreCase = true) || uri.host == "127.0.0.1" ||
+                uri.host == "::1" || uri.host == "[::1]"
+            require(uri.scheme.equals("https", ignoreCase = true) ||
+                (allowInsecureLocalhost && uri.scheme.equals("http", ignoreCase = true) && local)) {
+                "baseUrl must use HTTPS; localhost HTTP requires setAllowInsecureLocalhost(true)"
+            }
+            require(uri.host != null && uri.userInfo == null && uri.rawQuery == null &&
+                uri.rawFragment == null) {
+                "baseUrl must have a host and must not contain credentials, a query, or a fragment"
+            }
             return OpButtonConfig(
                 baseUrl, apiToken, deviceId, deviceName,
                 pollIntervalMs, actionPollIntervalMs, autoConnect,
                 loggerListener, sessionListener, actionListener,
-                sessionAttributes, logConfig, metricConfig
+                sessionAttributes, logConfig, metricConfig, deviceSecret, allowInsecureLocalhost
             )
         }
+
+        private fun safeHeaderValue(value: String): Boolean =
+            value.all { it.code in 0x21..0x7e }
     }
 }

@@ -35,6 +35,7 @@ internal class OpButtonRuntime(
     private val hostState: OpButtonHostState
     private val delivery: OpButtonPollDelivery
     private val deviceIdentity = OpButtonDeviceIdentity.forContext(context)
+    private val credentialStore = OpButtonDeviceCredentialStore(context)
 
     private var executor: ScheduledExecutorService? = null
     private var actionPollFuture: ScheduledFuture<*>? = null
@@ -194,9 +195,15 @@ internal class OpButtonRuntime(
         val deviceId = deviceIdentity.resolve(config.deviceId)
         val deviceName = config.deviceName.takeUnless { it.isNullOrEmpty() }
             ?: "${Build.MODEL} (Android ${Build.VERSION.RELEASE})"
+        val deviceSecret = credentialStore.getOrCreate(config.baseUrl, deviceId, config.deviceSecret)
+        httpClient.setDeviceSecret(deviceSecret)
 
         val attributes = hostState.resolveAllSessionAttributes()
         val resp = httpClient.connect(deviceId, deviceName, attributes)
+        resp.deviceSecret?.let {
+            httpClient.setDeviceSecret(it)
+            credentialStore.save(config.baseUrl, deviceId, it)
+        }
         hostState.acknowledgeAll(attributes)
         requestId.set(resp.requestId)
 

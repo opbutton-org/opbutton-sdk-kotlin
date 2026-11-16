@@ -91,7 +91,9 @@ class RuntimeContractsTest {
 
     @Test fun reservedCommandsAreExclusiveAndKeepTheirCapturedSession() {
         val calls = mutableListOf<String>()
-        val commands = mutableMapOf<OpButtonActionType, OpButtonCommand>(OpButtonActionType.LIVE_START to { _, token -> calls.add(token); Unit })
+        val commands = mutableMapOf<OpButtonActionType, OpButtonCommand>(
+            OpButtonActionType.LIVE_START to { _, token -> calls.add(token) }
+        )
         val router = OpButtonActionRouter(commands, { calls.add("widget") }, { listOf(OpButtonActionListener { calls.add("listener") }) })
         commands.clear()
         router.dispatch(action(OpButtonActionType.LIVE_START), "original-session")

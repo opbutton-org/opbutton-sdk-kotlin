@@ -9,6 +9,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.UUID
+import okio.Buffer
 
 internal class OpButtonHttpClient(
     private val baseUrl: String,
@@ -17,11 +18,21 @@ internal class OpButtonHttpClient(
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
         .build()
 ) : OpButtonPollDelivery.Transport {
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
     private val emptyBody = "".toRequestBody(jsonMedia)
     private val runId = UUID.randomUUID().toString()
+    @Volatile private var deviceSecret = UUID.randomUUID().toString() + UUID.randomUUID().toString()
+
+    fun setDeviceSecret(value: String) {
+        require(safeDeviceSecret(value)) {
+            "deviceSecret must contain 32 to 256 printable ASCII characters"
+        }
+        deviceSecret = value
+    }
 
     fun shutdown() {
         http.dispatcher.executorService.shutdown()
@@ -35,6 +46,7 @@ internal class OpButtonHttpClient(
             put("device_id", deviceId)
             put("device_name", deviceName)
             put("run_id", runId)
+            put("device_secret", deviceSecret)
             if (sessionAttributes.isNotEmpty()) {
                 val attrs = JSONObject()
                 for ((key, value) in sessionAttributes) {
@@ -53,6 +65,7 @@ internal class OpButtonHttpClient(
 
     fun pollStatus(requestId: String): OpButtonConnectResponse {
         val request = apiTokenRequest("/api/client/poll-status/$requestId?run_id=$runId")
+            .header("X-Device-Secret", deviceSecret)
             .get()
             .build()
 
@@ -193,7 +206,20 @@ internal class OpButtonHttpClient(
     private fun execute(request: Request): JSONObject {
         try {
             http.newCall(request).execute().use { response ->
-                val responseBody = response.body?.string() ?: ""
+                val body = response.body
+                if (body != null && body.contentLength() > MAX_RESPONSE_BYTES) {
+                    throw OpButtonException("Server response exceeds 2 MiB")
+                }
+                val responseBody = if (body == null) "" else {
+                    val source = body.source()
+                    val buffer = Buffer()
+                    while (source.read(buffer, 8192) != -1L) {
+                        if (buffer.size > MAX_RESPONSE_BYTES) {
+                            throw OpButtonException("Server response exceeds 2 MiB")
+                        }
+                    }
+                    buffer.readString(Charsets.UTF_8)
+                }
 
                 if (!response.isSuccessful) {
                     val detail = try {
@@ -214,5 +240,12 @@ internal class OpButtonHttpClient(
         } catch (e: Exception) {
             throw OpButtonException("Failed to parse server response", e)
         }
+    }
+
+    private companion object {
+        const val MAX_RESPONSE_BYTES = 2L * 1024L * 1024L
+
+        fun safeDeviceSecret(value: String): Boolean =
+            value.length in 32..256 && value.all { it.code in 0x21..0x7e }
     }
 }

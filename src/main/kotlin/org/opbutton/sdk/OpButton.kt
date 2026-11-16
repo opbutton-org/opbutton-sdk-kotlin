@@ -18,6 +18,9 @@ object OpButton {
 
     @JvmStatic
     fun initialize(config: OpButtonConfig, context: Context?) {
+        require(context != null || config.deviceSecret != null) {
+            "Android Context is required unless setDeviceSecret() uses caller-owned secure storage"
+        }
         if (instance != null) {
             OpButtonLog.w("OpButton.initialize() called more than once, ignoring")
             return
