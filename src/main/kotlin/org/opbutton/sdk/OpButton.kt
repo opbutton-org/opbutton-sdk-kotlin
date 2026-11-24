@@ -4,7 +4,7 @@ import android.content.Context
 import org.json.JSONObject
 
 object OpButton {
-    const val VERSION = "1.0.39"
+    const val VERSION = "1.0.40"
 
     @Volatile
     private var instance: OpButtonRuntime? = null
