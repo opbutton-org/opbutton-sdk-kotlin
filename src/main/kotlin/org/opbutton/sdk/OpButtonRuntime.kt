@@ -34,8 +34,8 @@ internal class OpButtonRuntime(
     val telemetry: OpButtonTelemetry
     private val hostState: OpButtonHostState
     private val delivery: OpButtonPollDelivery
-    private val deviceIdentity = OpButtonDeviceIdentity.forContext(context)
     private val credentialStore = OpButtonDeviceCredentialStore(context)
+    private val deviceIdentity = OpButtonDeviceIdentity.forContext(context, config, credentialStore)
 
     private var executor: ScheduledExecutorService? = null
     private var actionPollFuture: ScheduledFuture<*>? = null

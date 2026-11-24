@@ -36,6 +36,37 @@ class DeviceIdentityTest {
         assertNotEquals(id, OpButtonDeviceIdentity.installationIdentity(directory.newFolder()))
     }
 
+    @Test fun reinstallDoesNotReuseAndroidIdentityWithoutItsCredential() {
+        val androidId = "android-v1:existing-device"
+        val firstDirectory = directory.newFolder()
+        val secondDirectory = directory.newFolder()
+        val first = OpButtonDeviceIdentity.withInstallationIdentity(
+            OpButtonDeviceIdentity.Source { androidId },
+            OpButtonDeviceIdentity.Source { OpButtonDeviceIdentity.installationIdentity(firstDirectory) }
+        ) { false }
+        val second = OpButtonDeviceIdentity.withInstallationIdentity(
+            OpButtonDeviceIdentity.Source { androidId },
+            OpButtonDeviceIdentity.Source { OpButtonDeviceIdentity.installationIdentity(secondDirectory) }
+        ) { false }
+
+        val firstId = first.resolve(null)
+        assertTrue(firstId.startsWith("installation-v1:"))
+        assertEquals(firstId, first.resolve(null))
+        assertNotEquals(firstId, second.resolve(null))
+        assertNotEquals(androidId, second.resolve(null))
+    }
+
+    @Test fun existingAndroidIdentityKeepsItsStoredCredential() {
+        val androidId = "android-v1:approved-device"
+        val identity = OpButtonDeviceIdentity.withInstallationIdentity(
+            OpButtonDeviceIdentity.Source { androidId },
+            OpButtonDeviceIdentity.Source { error("Unexpected installation identity") },
+            androidId::equals
+        )
+
+        assertEquals(androidId, identity.resolve(null))
+    }
+
     @Test fun contextlessFallbackSurvivesSdkReinitializationInOneProcess() {
         assertEquals(OpButtonDeviceIdentity().resolve(null), OpButtonDeviceIdentity().resolve(null))
     }

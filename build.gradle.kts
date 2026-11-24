@@ -24,7 +24,7 @@ plugins {
 }
 
 group = "org.opbutton"
-version = "1.0.38"
+version = "1.0.39"
 
 dependencyLocking {
     lockAllConfigurations()

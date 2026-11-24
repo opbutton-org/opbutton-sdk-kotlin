@@ -10,6 +10,9 @@ internal class OpButtonDeviceCredentialStore(context: Context?) {
     private val context = context?.applicationContext
     private val memory = ConcurrentHashMap<String, String>()
 
+    fun hasStoredCredential(baseUrl: String, deviceId: String): Boolean =
+        credentialFile(key(baseUrl, deviceId))?.isFile == true
+
     fun getOrCreate(baseUrl: String, deviceId: String, configured: String?): String {
         if (configured != null) return configured
         check(context != null) {

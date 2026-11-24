@@ -8,7 +8,7 @@ import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
 
-/** Identity strategies are evaluated in order, without a hardware-model fallback. */
+/** Uses an installation identity unless the host or a stored credential supplies an existing one. */
 internal class OpButtonDeviceIdentity(vararg sources: Source) {
     fun interface Source { fun resolve(): String? }
     private val sources = sources.copyOf()
@@ -28,10 +28,14 @@ internal class OpButtonDeviceIdentity(vararg sources: Source) {
     companion object {
         private val processId = "process-v1:${UUID.randomUUID()}"
 
-        fun forContext(context: Context?): OpButtonDeviceIdentity {
+        fun forContext(
+            context: Context?,
+            config: OpButtonConfig,
+            credentials: OpButtonDeviceCredentialStore
+        ): OpButtonDeviceIdentity {
             if (context == null) return OpButtonDeviceIdentity()
             val owner = context.applicationContext ?: context
-            return OpButtonDeviceIdentity(
+            return withInstallationIdentity(
                 Source {
                     try {
                         scopedAndroidId(owner.packageName, Settings.Secure.getString(owner.contentResolver, Settings.Secure.ANDROID_ID))
@@ -41,8 +45,15 @@ internal class OpButtonDeviceIdentity(vararg sources: Source) {
                     }
                 },
                 Source { installationIdentity(owner.noBackupFilesDir) }
-            )
+            ) { id -> config.deviceSecret != null || credentials.hasStoredCredential(config.baseUrl, id) }
         }
+
+        fun withInstallationIdentity(
+            androidIdentity: Source,
+            installation: Source,
+            hasCredential: (String) -> Boolean
+        ): OpButtonDeviceIdentity =
+            OpButtonDeviceIdentity(Source { androidIdentity.resolve()?.takeIf(hasCredential) }, installation)
 
         fun scopedAndroidId(packageName: String, androidId: String?): String? {
             if (androidId == null || !androidId.matches(Regex("(?i)[0-9a-f]{1,16}")) ||
